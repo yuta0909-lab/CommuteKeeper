@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン - 通勤キーパー</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <style>
+        body { background: #f0f2f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; }
+        .login-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        .btn-login { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; font-weight: bold; color: white; padding: 12px; border-radius: 30px; margin-top: 20px; }
+        .btn-login:hover { opacity: 0.9; }
+        input[type="text"] { border-radius: 20px; padding: 20px; text-align: center; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+    <h3 class="mb-4 font-weight-bold">通勤キーパー</h3>
+    <p class="text-muted">お名前を入力してください</p>
+
+    <form action="/dashboard" method="post">
+        <div class="form-group">
+            <input type="text" name="userName" class="form-control" placeholder="例: たなか" required>
+        </div>
+        <button type="submit" class="btn btn-block btn-login">スタート</button>
+    </form>
+</div>
+
+</body>
+</html>

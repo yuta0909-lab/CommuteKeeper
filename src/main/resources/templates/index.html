@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>通勤キーパー</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; padding-bottom: 80px; font-family: sans-serif; }
+
+        /* ▼▼▼ デザイン（紫ヘッダーなど）はそのまま維持 ▼▼▼ */
+        .header-status { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 0 0 20px 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .btn-depart { width: 180px; height: 180px; border-radius: 50%; font-size: 1.5rem; font-weight: bold; color: white; border: none; background: linear-gradient(145deg, #28a745, #218838); box-shadow: 0 10px 25px rgba(40, 167, 69, 0.4); margin: 20px auto; display: block; }
+        .btn-depart.disabled { background: #ccc; box-shadow: none; pointer-events: none; }
+        .card-box { background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+
+        /* 天気カード (新デザイン) */
+        .weather-info { font-size: 1.0rem; color: #333; margin-top: 5px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .weather-icon-large { font-size: 3.5rem; line-height: 1; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
+        .temp-high { color: #e74c3c; font-weight: bold; font-size: 1.2rem; }
+        .temp-low { color: #3498db; font-weight: bold; font-size: 1.2rem; }
+        .clothing-advice { background: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; }
+
+        /* 遅刻アラート */
+        #lateAlert { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(220, 53, 69, 0.95); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: white; }
+        .btn-sms { background: white; color: #d9534f; font-weight: bold; padding: 15px 40px; border-radius: 50px; font-size: 1.2rem; text-decoration: none; margin-top: 20px; display: inline-block; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+
+        /* ▼▼▼ カレンダー (曜日対応版) ▼▼▼ */
+        .calendar-header {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 5px;
+        }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+        .calendar-day { height: 40px; background: #f1f3f5; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; position: relative; color: #333; }
+
+        /* 曜日・祝日カラー */
+        .sat { background-color: #e6f0ff; color: blue; } /* 土曜 */
+        .sun { background-color: #ffe6e6; color: red; } /* 日曜 */
+        .holiday { background-color: #ffe6e6; color: red; } /* 祝日 */
+        .today { border: 2px solid #333; font-weight: bold; }
+
+        /* スタンプ */
+        .calendar-day.stamped { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .stamp-mark { position: absolute; font-size: 1.5rem; opacity: 0.8; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+
+        input[type="time"], input[type="tel"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.2rem; text-align: center; }
+        select.form-control { height: 50px; font-size: 1.1rem; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="lateAlert">
+    <h1 style="font-size: 4rem;">🚨</h1>
+    <h2>遅刻注意！</h2>
+    <p>出発予定時間を過ぎています。<br>リーダーに連絡しますか？</p>
+    <a id="autoSmsLink" href="#" class="btn-sms">📩 SMSを起動</a>
+    <button onclick="closeAlert()" class="btn btn-outline-light btn-sm mt-4">閉じる</button>
+</div>
+
+<div class="header-status">
+    <div>連続達成</div>
+    <div style="font-size: 3rem; font-weight: bold;">
+        <span id="streak-count">0</span>日 </div>
+    <div style="font-size: 0.9rem;">
+        <span id="user-name-display">たなか</span> さん
+    </div>
+    <div style="font-size:0.8rem; margin-top:5px; opacity:0.8;">(改) バージョン</div>
+</div>
+
+<div class="container mt-3">
+    <div class="card-box">
+        <h6 class="border-bottom pb-2 mb-2">☀ 今日の天気と服装</h6>
+        <div class="form-group">
+            <select id="location-select" class="form-control" onchange="updateWeather()" style="height: auto; padding: 5px; font-size: 1rem;">
+                <option value="34.69,135.50">大阪 (Osaka)</option>
+                <option value="35.01,135.76">京都 (Kyoto)</option>
+                <option value="34.69,135.19">兵庫 (Kobe)</option>
+                <option value="34.23,135.17">和歌山 (Wakayama)</option> <option value="35.00,135.87">滋賀 (Otsu)</option>     <option value="34.69,135.80">奈良 (Nara)</option>       <option value="35.69,139.69">東京 (Tokyo)</option>
+            </select>
+        </div>
+        <div id="weather-display" style="text-align:center;">
+            <div id="weather-icon-area" class="weather-icon-large">Loading...</div>
+            <div class="weather-info" id="weather-info"></div>
+            <div class="clothing-advice" id="clothing-advice">🧥 ...</div>
+        </div>
+    </div>
+
+    <div class="text-center mb-4">
+        <form action="/depart" method="post" onsubmit="handleDepartClick()">
+            <input type="hidden" name="user" value="たなか">
+            <button type="submit" id="btn-depart-main" class="btn-depart">
+                出発！
+            </button>
+        </form>
+
+        <a id="manualSmsLink" href="#" class="btn btn-outline-danger btn-sm mt-3 px-4 py-2 font-weight-bold" style="border-radius: 50px;">
+            📩 リーダーへ連絡 (SMS)
+        </a>
+    </div>
+
+    <div class="card-box">
+        <h6 class="border-bottom pb-2 mb-3">📅 連続達成カレンダー (<span id="cal-title"></span>)</h6>
+
+        <div class="calendar-header">
+            <div style="color:red">日</div>
+            <div>月</div>
+            <div>火</div>
+            <div>水</div>
+            <div>木</div>
+            <div>金</div>
+            <div style="color:blue">土</div>
+        </div>
+
+        <div id="calendar-grid" class="calendar-grid">
+            </div>
+    </div>
+
+    <div class="alert alert-success mt-3 shadow-sm">
+        <strong>✅ 設定保存完了</strong><br>
+        <span style="font-size: 0.9rem;">Googleカレンダーで通知を予約：</span>
+        <a href="http://www.google.com/calendar/event?action=TEMPLATE&text=そろそろ出発の時間です！" target="_blank" class="btn btn-success btn-block mt-2 font-weight-bold">
+            📅 カレンダーに通知セット
+        </a>
+    </div>
+
+    <form action="/config/save" method="post">
+        <input type="hidden" id="userName" name="userName" value="たなか">
+        <div class="card-box">
+            <details open>
+                <summary style="font-weight:bold; cursor:pointer;">⚙️ 設定</summary>
+                <div class="mt-3">
+                    <label>🏠 出発予定時間</label>
+                    <input type="time" required id="departureTime" name="departureTime" value="08:00">
+                </div>
+                <div class="mt-3">
+                    <label>🔔 通知 (Googleカレンダー連携)</label>
+                    <select class="form-control" id="notificationMinutesBefore" name="notificationMinutesBefore">
+                        <option value="5">5分前</option>
+                        <option value="10">10分前</option>
+                        <option value="15" selected="selected">15分前</option>
+                    </select>
+                </div>
+                <div class="mt-3">
+                    <label>🚨 リーダーの電話番号 (必須)</label>
+                    <input type="tel" placeholder="09012345678" id="leaderPhoneNumber" name="leaderPhoneNumber" value="">
+                </div>
+                <button type="submit" class="btn btn-secondary btn-block mt-4">設定を保存して更新</button>
+            </details>
+        </div>
+    </form>
+</div>
+
+<script>
+    // --- 設定値 (サーバー側から渡される値がある場合は書き換えてください) ---
+    const departureTimeStr = "08:00:00";
+    const leaderPhone = null;
+    const userName = "たなか";
+
+    let isAlertClosed = false;
+
+    // --- 1. 連続達成カウントロジック (平日のみリセット) ---
+    function initStreakLogic() {
+        // LocalStorageからデータを取得
+        let count = parseInt(localStorage.getItem('streakCount')) || 0;
+        let lastDate = localStorage.getItem('lastVisitDate');
+        const todayStr = new Date().toDateString(); // "Fri Dec 08 2025"
+        const dayOfWeek = new Date().getDay(); // 0:日, 6:土
+
+        // 日付が変わっている場合
+        if (lastDate !== todayStr) {
+            // 土(6) または 日(0) はリセットしない (維持)
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                console.log("土日のためカウント維持");
+            } else {
+                // 平日はリセット (前日に出発してなければ0、などの細かい判定も可能ですが今回は単純に)
+                // ※本来は「昨日押したか」を判定すべきですが、簡易的に「平日リセット」とします
+                // もし「昨日押してたら継続」にしたい場合、isDepartedフラグの保存が必要です。
+                // ここではご要望通り「平日になったら一旦リセット」の挙動にします（当日ボタンを押すと増える）
+                count = 0;
+            }
+            localStorage.setItem('lastVisitDate', todayStr);
+            localStorage.setItem('streakCount', count);
+        }
+
+        // 画面表示
+        document.getElementById('streak-count').innerText = count;
+
+        // ボタンの状態チェック (今日すでに押したか？)
+        const isDepartedToday = localStorage.getItem('isDepartedToday_' + todayStr);
+        const btn = document.getElementById('btn-depart-main');
+        if (isDepartedToday === 'true') {
+            btn.innerHTML = "<span>✅ 出発済み</span>";
+            btn.classList.add('disabled');
+        }
+    }
+
+    // 出発ボタンを押した時
+    function handleDepartClick() {
+        let count = parseInt(localStorage.getItem('streakCount')) || 0;
+        count++;
+        localStorage.setItem('streakCount', count);
+
+        const todayStr = new Date().toDateString();
+        localStorage.setItem('isDepartedToday_' + todayStr, 'true');
+
+        // フォーム送信はそのまま行われます
+        return true;
+    }
+
+    // --- 2. 天気API連携 (Open-Meteo 改良版) ---
+    async function updateWeather() {
+        const select = document.getElementById('location-select');
+        const [lat, lng] = select.value.split(',');
+
+        // weathercode(アイコン用), max(最高), min(最低) を取得
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTokyo`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            const maxTemp = data.daily.temperature_2m_max[0];
+            const minTemp = data.daily.temperature_2m_min[0];
+            const code = data.daily.weathercode[0];
+
+            // 天気コード変換
+            let icon = "❓";
+            if (code === 0) icon = "☀️"; // 快晴
+            else if (code <= 3) icon = "⛅"; // 曇り
+            else if (code >= 45 && code <= 48) icon = "🌫️"; // 霧
+            else if (code >= 51 && code <= 67) icon = "☔"; // 雨
+            else if (code >= 71 && code <= 77) icon = "☃️"; // 雪
+            else if (code >= 95) icon = "⚡"; // 雷
+
+            // 表示更新
+            document.getElementById('weather-icon-area').innerText = icon;
+            document.getElementById('weather-info').innerHTML =
+                `<span class="temp-high">最高 ${maxTemp}℃</span> / <span class="temp-low">最低 ${minTemp}℃</span>`;
+
+            // 服装判定
+            let advice = "";
+            if (maxTemp >= 25) advice = "半袖で快適！水分補給を。";
+            else if (maxTemp >= 20) advice = "長袖シャツがおすすめ。";
+            else if (maxTemp >= 15) advice = "カーディガンやパーカーを。";
+            else if (maxTemp >= 10) advice = "コートが必要です。";
+            else advice = "ダウンやマフラーで防寒を！";
+            document.getElementById('clothing-advice').innerText = "🧥 " + advice;
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('weather-info').innerText = "取得失敗";
+        }
+    }
+
+    // --- 3. カレンダー機能 (JS生成 + 祝日対応) ---
+    async function renderCalendar() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = date.getMonth(); // 0-11
+        const todayD = date.getDate();
+
+        document.getElementById('cal-title').innerText = `${year}年 ${month + 1}月`;
+
+        // 祝日取得
+        let holidays = {};
+        try {
+            const res = await fetch('https://holidays-jp.github.io/api/v1/date.json');
+            holidays = await res.json();
+        } catch (e) {}
+
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const grid = document.getElementById('calendar-grid');
+        grid.innerHTML = "";
+
+        // 月初の空白
+        for (let i = 0; i < firstDay.getDay(); i++) {
+            const empty = document.createElement('div');
+            empty.className = 'calendar-day';
+            grid.appendChild(empty);
+        }
+
+        // 日付生成
+        for (let d = 1; d <= lastDay.getDate(); d++) {
+            const cell = document.createElement('div');
+            cell.className = 'calendar-day';
+
+            const currentObj = new Date(year, month, d);
+            const week = currentObj.getDay();
+            const dateKey = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+            // 色分けクラス
+            if (week === 0) cell.classList.add('sun');
+            else if (week === 6) cell.classList.add('sat');
+
+            if (holidays[dateKey]) cell.classList.add('holiday'); // 祝日上書き
+            if (d === todayD) cell.classList.add('today');
+
+            // スタンプ表示 (今日は押した？)
+            const isDepartedToday = localStorage.getItem('isDepartedToday_' + (new Date().toDateString()));
+            if (d === todayD && isDepartedToday === 'true') {
+                 cell.classList.add('stamped');
+                 cell.innerHTML = `<span>${d}</span><span class="stamp-mark">💮</span>`;
+            } else {
+                 cell.innerText = d;
+            }
+
+            grid.appendChild(cell);
+        }
+    }
+
+    // --- その他: SMSリンク更新 ---
+    function updateSmsLinks() {
+        if (!leaderPhone) return;
+        const message = `【連絡】${userName}です。連絡事項があります。`;
+        const href = `sms:${leaderPhone.replace(/-/g, '')}?body=${encodeURIComponent(message)}`;
+        const autoLink = document.getElementById('autoSmsLink');
+        if (autoLink) autoLink.setAttribute('href', href);
+        const manualLink = document.getElementById('manualSmsLink');
+        if (manualLink) manualLink.setAttribute('href', href);
+    }
+
+    function closeAlert() {
+        document.getElementById('lateAlert').style.display = 'none';
+        isAlertClosed = true;
+    }
+
+    function checkTime() {
+        const isDeparted = document.getElementById('btn-depart-main').classList.contains('disabled');
+        if (isDeparted || !leaderPhone || !departureTimeStr || isAlertClosed) return;
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const [h, m] = departureTimeStr.split(':').map(Number);
+        const deptMins = h * 60 + m;
+
+        if (currentMins > deptMins && currentMins < (deptMins + 180)) {
+            const alertBox = document.getElementById('lateAlert');
+            if (alertBox.style.display !== 'flex') {
+                alertBox.style.display = 'flex';
+                const lateMsg = `【遅刻連絡】${userName}です。寝坊しました。急いで向かいます。`;
+                const lateHref = `sms:${leaderPhone.replace(/-/g, '')}?body=${encodeURIComponent(lateMsg)}`;
+                document.getElementById('autoSmsLink').setAttribute('href', lateHref);
+            }
+        }
+    }
+
+    // 実行
+    window.onload = function() {
+        updateSmsLinks();
+        initStreakLogic(); // カウントロジック初期化
+        updateWeather();   // 天気初期化
+        renderCalendar();  // カレンダー初期化
+        setInterval(checkTime, 1000);
+    };
+</script>
+
+</body>
+</html>

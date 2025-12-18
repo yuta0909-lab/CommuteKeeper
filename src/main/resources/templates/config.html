@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>通勤キーパー</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; padding-bottom: 80px; font-family: sans-serif; }
+        .header-status { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 0 0 20px 20px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+
+        .btn-depart { width: 180px; height: 180px; border-radius: 50%; font-size: 1.5rem; font-weight: bold; color: white; border: none; background: linear-gradient(145deg, #28a745, #218838); box-shadow: 0 10px 25px rgba(40, 167, 69, 0.4); margin: 20px auto; display: block; }
+        .btn-depart.disabled { background: #ccc; box-shadow: none; pointer-events: none; }
+
+        .card-box { background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+
+        /* 天気カード */
+        .weather-info { font-size: 1.1rem; font-weight: bold; color: #333; margin-top: 5px; }
+        .clothing-advice { background: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 0.9rem; }
+
+        /* 遅刻アラート */
+        #lateAlert { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(220, 53, 69, 0.95); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: white; }
+        .btn-sms { background: white; color: #d9534f; font-weight: bold; padding: 15px 40px; border-radius: 50px; font-size: 1.2rem; text-decoration: none; margin-top: 20px; display: inline-block; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+        .calendar-day { height: 35px; background: #f1f3f5; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; position: relative; }
+        .calendar-day.stamped { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .stamp-mark { position: absolute; font-size: 1.2rem; opacity: 0.8; }
+
+        input[type="time"], input[type="tel"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.2rem; text-align: center; }
+        select.form-control { height: 50px; font-size: 1.1rem; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div id="lateAlert">
+    <h1 style="font-size: 4rem;">🚨</h1>
+    <h2>遅刻注意！</h2>
+    <p>出発予定時間を過ぎています。<br>リーダーに連絡しますか？</p>
+    <a id="autoSmsLink" href="#" class="btn-sms">📩 SMSを起動</a>
+    <button onclick="closeAlert()" class="btn btn-outline-light btn-sm mt-4">閉じる</button>
+</div>
+
+<div class="header-status">
+    <div>連続達成</div>
+    <div style="font-size: 3rem; font-weight: bold;">
+        <span th:text="${commuteConfigForm.loginStreakDays}">1</span>日
+    </div>
+    <div style="font-size: 0.9rem;">
+        <span th:text="${commuteConfigForm.userName}">User</span> さん
+    </div>
+</div>
+
+<div class="container mt-3">
+
+    <div class="card-box">
+        <h6 class="border-bottom pb-2 mb-2">☀ 今日の天気と服装</h6>
+        <div class="form-group">
+            <select id="location-select" class="form-control" onchange="updateWeather()" style="height: auto; padding: 5px; font-size: 1rem;">
+                <option value="34.693,135.502">大阪 (Osaka)</option>
+                <option value="35.011,135.768">京都 (Kyoto)</option>
+                <option value="34.690,135.195">兵庫 (Kobe)</option>
+                <option value="35.689,139.692">東京 (Tokyo)</option>
+            </select>
+        </div>
+        <div id="weather-display">
+            <div class="weather-info" id="weather-info">取得中...</div>
+            <div class="clothing-advice" id="clothing-advice">🧥 ...</div>
+        </div>
+    </div>
+
+    <div class="text-center mb-4">
+        <form th:action="@{/depart}" method="post">
+            <input type="hidden" name="user" th:value="${commuteConfigForm.userName}">
+            <button type="submit" class="btn-depart" th:classappend="${commuteConfigForm.hasDeparted} ? 'disabled'">
+                <span th:text="${commuteConfigForm.hasDeparted} ? '✅ 出発済み' : '🏠 出発！'"></span>
+            </button>
+        </form>
+
+        <a id="manualSmsLink" href="#" class="btn btn-outline-danger btn-sm mt-3 px-4 py-2 font-weight-bold" style="border-radius: 50px;">
+            📩 リーダーへ連絡 (SMS)
+        </a>
+    </div>
+
+    <div class="card-box">
+        <h6 class="border-bottom pb-2 mb-3">📅 連続達成カレンダー (<span th:text="${currentMonthStr}"></span>)</h6>
+        <div class="calendar-grid">
+            <div th:each="day : ${calendarDays}" th:classappend="${day != null && day.isStamped} ? 'calendar-day stamped' : 'calendar-day'">
+                <span th:if="${day != null}" th:text="${day.day}"></span>
+                <span th:if="${day != null && day.isStamped}" class="stamp-mark">💮</span>
+            </div>
+        </div>
+    </div>
+
+    <div th:if="${calendarUrl}" class="alert alert-success mt-3 shadow-sm">
+        <strong>✅ 設定保存完了</strong><br>
+        <span style="font-size: 0.9rem;">Googleカレンダーで通知を予約：</span>
+        <a th:href="${calendarUrl}" target="_blank" class="btn btn-success btn-block mt-2 font-weight-bold">
+            📅 カレンダーに通知セット
+        </a>
+    </div>
+
+    <form th:action="@{/config/save}" th:object="${commuteConfigForm}" method="post">
+        <input type="hidden" th:field="*{userName}">
+
+        <div class="card-box">
+            <details open>
+                <summary style="font-weight:bold; cursor:pointer;">⚙️ 設定</summary>
+
+                <div class="mt-3">
+                    <label>🏠 出発予定時間</label>
+                    <input type="time" th:field="*{departureTime}" required>
+                </div>
+
+                <div class="mt-3">
+                    <label>🔔 通知 (Googleカレンダー連携)</label>
+                    <select class="form-control" th:field="*{notificationMinutesBefore}">
+                        <option value="5">5分前</option>
+                        <option value="10">10分前</option>
+                        <option value="15">15分前</option>
+                    </select>
+                </div>
+
+                <div class="mt-3">
+                    <label>🚨 リーダーの電話番号 (必須)</label>
+                    <input type="tel" th:field="*{leaderPhoneNumber}" placeholder="09012345678">
+                </div>
+
+                <button type="submit" class="btn btn-secondary btn-block mt-4">設定を保存して更新</button>
+            </details>
+        </div>
+    </form>
+</div>
+
+<script th:inline="javascript">
+    const isDeparted = /*[[${commuteConfigForm != null ? commuteConfigForm.hasDeparted : false}]]*/ false;
+    const departureTimeStr = /*[[${commuteConfigForm != null ? commuteConfigForm.departureTime : '08:00'}]]*/ '08:00';
+    const leaderPhone = /*[[${commuteConfigForm != null ? commuteConfigForm.leaderPhoneNumber : ''}]]*/ '';
+    const userName = /*[[${commuteConfigForm != null ? commuteConfigForm.userName : ''}]]*/ '';
+
+    let isAlertClosed = false;
+
+    // SMSリンク生成
+    function updateSmsLinks() {
+        if (!leaderPhone) return;
+        const message = `【連絡】${userName}です。連絡事項があります。`;
+        const href = `sms:${leaderPhone.replace(/-/g, '')}?body=${encodeURIComponent(message)}`;
+
+        const autoLink = document.getElementById('autoSmsLink');
+        if (autoLink) autoLink.setAttribute('href', href);
+
+        const manualLink = document.getElementById('manualSmsLink');
+        if (manualLink) manualLink.setAttribute('href', href);
+    }
+
+    // ★追加: 天気API連携 (Open-Meteo)
+    async function updateWeather() {
+        const select = document.getElementById('location-select');
+        const [lat, lng] = select.value.split(',');
+
+        // 公開API (APIキー不要)
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=weathercode,temperature_2m_max&timezone=auto`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            const maxTemp = data.daily.temperature_2m_max[0]; // 今日の最高気温
+
+            document.getElementById('weather-info').innerText = `最高気温: ${maxTemp}℃`;
+
+            // 服装判定
+            let advice = "";
+            if (maxTemp >= 25) advice = "半袖で快適！水分補給を。";
+            else if (maxTemp >= 20) advice = "長袖シャツがおすすめ。";
+            else if (maxTemp >= 15) advice = "カーディガンやパーカーを。";
+            else if (maxTemp >= 10) advice = "コートが必要です。";
+            else advice = "ダウンやマフラーで防寒を！";
+
+            document.getElementById('clothing-advice').innerText = "🧥 " + advice;
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('weather-info').innerText = "天気情報の取得に失敗";
+        }
+    }
+
+    window.onload = function() {
+        updateSmsLinks();
+        updateWeather(); // 初期表示で天気を取得
+    };
+
+    function closeAlert() {
+        document.getElementById('lateAlert').style.display = 'none';
+        isAlertClosed = true;
+    }
+
+    function checkTime() {
+        if (isDeparted || !leaderPhone || !departureTimeStr || isAlertClosed) return;
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const [h, m] = departureTimeStr.split(':').map(Number);
+        const deptMins = h * 60 + m;
+
+        if (currentMins > deptMins && currentMins < (deptMins + 180)) {
+            const alertBox = document.getElementById('lateAlert');
+            if (alertBox.style.display !== 'flex') {
+                alertBox.style.display = 'flex';
+                const lateMsg = `【遅刻連絡】${userName}です。寝坊しました。急いで向かいます。`;
+                const lateHref = `sms:${leaderPhone.replace(/-/g, '')}?body=${encodeURIComponent(lateMsg)}`;
+                document.getElementById('autoSmsLink').setAttribute('href', lateHref);
+            }
+        }
+    }
+    setInterval(checkTime, 1000);
+</script>
+
+</body>
+</html>
